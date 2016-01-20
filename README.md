@@ -1,5 +1,5 @@
-2015 Teaser Deployment
-======================
+Dragon Sector CTF Infrastructure Deployment
+===========================================
 
 The Milk Crate server provisioning system. Don't kick it too hard!
 
@@ -22,4 +22,3 @@ Maintainer
 ----------
 
     Sergiusz Bazanski <q3k@q3k.org>
-    Emergencies: +48 792973702
