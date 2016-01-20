@@ -1,0 +1,32 @@
+#!/bin/bash
+
+/sbin/iptables -t nat -F
+/sbin/iptables -t mangle -F
+/sbin/iptables -F
+/sbin/iptables -P OUTPUT ACCEPT
+/sbin/iptables -P INPUT DROP
+/sbin/iptables -P FORWARD DROP
+
+iptables -t nat -A POSTROUTING -o p5p1 --source 10.42.128.0/17 ! --destination 10.42.0.0/17 -j MASQUERADE
+
+# LOCKOUT MODE
+iptables -A FORWARD --source 10.42.160.0/24 --destination 0.0.0.0/0 -j ACCEPT
+iptables -A FORWARD --source 10.42.128.0/17 --destination 10.42.0.0/24 -j ACCEPT
+iptables -A FORWARD --source 10.42.128.0/17 ! --destination 10.42.0.0/17 -j ACCEPT
+# UNLOCK MODE
+#iptables -A FORWARD --source 10.42.128.0/17 --destination 0.0.0.0/0 -j ACCEPT
+# END
+
+iptables -A FORWARD --source 10.42.0.0/17 --destination 10.42.128.0/17 -j ACCEPT
+iptables -A FORWARD -i p5p1 --destination 10.42.128.0/17 -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+iptables -A INPUT -i lo -j ACCEPT
+
+iptables -A INPUT -p icmp -j ACCEPT
+
+iptables -A INPUT -m state --state INVALID -j DROP
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+iptables -A INPUT -p tcp --dport ssh -j ACCEPT
+iptables -A INPUT -i p5p1 -p tcp --dport 179 -j ACCEPT
+iptables -A INPUT -p udp -j ACCEPT

@@ -1,0 +1,35 @@
+  - name: Run OpenVPN locally, if not running already
+    hosts: 127.0.0.1
+    connection: local
+    tasks:
+      - name: Wait for manual connection if requested
+        pause: prompt="Please connect VPN manually"
+        when: lookup('env', 'CTF_VPN_MANUAL')
+      - name: Run OpenVPN
+        shell: "cd ../ && make vpn.connect"
+        when: lookup('env', 'CTF_VPN_FORCEOK') == "" and lookup('env', 'CTF_VPN_MANUAL') == ""
+
+  - name: Set up production memcached software
+    hosts: tag_Role_ctf_prod_role_memcached
+    user: root
+    handlers:
+      - name: restart memcached
+        service: name=memcached state=restarted
+    tasks:
+      - include: tasks/memcached.yaml env_name=production env_short=prod
+
+  - name: Set up production flagsystem software
+    hosts: tag_Role_ctf_prod_role_flagsystem
+    user: root
+    handlers:
+      - name: restart php
+        command: restart php5-fpm
+      - name: reload nginx
+        command: /etc/init.d/nginx restart
+    tasks:
+      - include: tasks/flagsystem.yaml env_name=production env_short=prod enable_htpasswd=false
+
+  - name: Set up production flagsystem infrastructure
+    hosts: localhost
+    tasks:
+      - include: tasks/flagsystem-infrastructure.yaml env_name=production env_short=prod

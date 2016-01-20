@@ -1,0 +1,27 @@
+- name: Create tasks production infrastructure on Amazon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - include: tasks/tasksinfra.yaml env_name=production env_short=prod aws_region=eu-central-1
+
+- name: First-time set up tasks production instances
+  hosts: prod-new-tasks
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - include: tasks/infrastructure-first.yaml env_name=production env_short=prod dc=ec2
+  handlers:
+    - name: reload ssh
+      service: name=ssh state=reloaded
+
+- name: Remove sudo from new hosts
+  hosts: prod-new-tasks
+  remote_user: root
+  tasks:
+    - name: Remove ubuntu user
+      user: name=ubuntu state=absent remove=yes
+    - name: Remove sudo (1)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge ubuntu-minimal
+    - name: Remove sudo (2)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge sudo

@@ -1,0 +1,47 @@
+- name: Set up production nightsky
+  hosts: tag_Name_ctf_prod_vm_nightsky
+  user: root
+  handlers:
+    - name: restart nightsky
+      service: name=nightsky state=restarted
+  tasks:
+    - include: tasks/nightsky.yaml env_name=production env_short=prod
+
+- name: Set up production soaped-sql
+  hosts: tag_Name_ctf_prod_vm_soaped_sql
+  user: root
+  handlers:
+    - name: restart php
+      command: restart php5-fpm
+    - name: reload nginx
+      command: /etc/init.d/nginx restart
+  tasks:
+    - include: tasks/soaped-sql.yaml env_name=production env_short=prod
+
+- name: Set up production spoonknifeand
+  hosts: tag_Name_ctf_prod_vm_spoonknifeand
+  user: root
+  handlers:
+    - name: restart spoonknifeand
+      service: name=spoonknifeand state=restarted
+  tasks:
+    - include: tasks/spoonknifeand.yaml env_name=production env_short=prod
+
+- name: Set up production go-for-it
+  hosts: tag_Name_ctf_prod_vm_go_for_it
+  user: root
+  handlers:
+    - name: restart goforit
+      service: name=goforit state=restarted
+  tasks:
+    - include: tasks/goforit.yaml env_name=production env_short=prod
+
+- name: Set up production some-srs-crypto
+  hosts: tag_Name_ctf_prod_vm_some_srs_crypto
+  user: root
+  handlers:
+    - name: restart somesrscrypto
+      service: name=somesrscrypto state=restarted
+  tasks:
+    - include: tasks/somesrscrypto.yaml env_name=production env_short=prod
+

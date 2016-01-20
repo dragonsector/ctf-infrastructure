@@ -1,0 +1,8 @@
+- name: Install challenge files
+  hosts: tag_Role_ctf_prod_role_flagsystem
+  user: root
+  tasks:
+    - name: Synchronize challenges
+      synchronize: src=../challenges/ dest=/srv/flagsystem/flagsystem/challenges/ delete=yes
+    - name: Fix challenge ownership
+      file: path=/srv/flagsystem/flagsystem/challenges/ owner=root group=flagsystem mode=0750 recurse=yes state=directory

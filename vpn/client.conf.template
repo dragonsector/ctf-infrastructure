@@ -1,0 +1,17 @@
+tls-client
+remote {{REMOTE}} 1337
+
+ca vpn/{{ENV}}-ca.crt
+cert vpn/{{ENV}}-client.crt
+key vpn/{{ENV}}-client.key
+
+proto udp
+dev tun
+
+keepalive 10 120
+comp-lzo
+
+ns-cert-type server
+remote-cert-tls server
+
+pull

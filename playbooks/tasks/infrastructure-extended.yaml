@@ -1,0 +1,238 @@
+  - name: Check ctf-{{env_short}} VPC existence
+    local_action:
+        module: ec2_vpc
+        cidr_block: 10.42.0.0/17
+        region: "{{aws_region}}"
+        internet_gateway: True
+        resource_tags:
+            Name:  ctf-{{env_short}}
+        subnets:
+          - cidr: 10.42.0.0/24 # private/nat
+          - cidr: 10.42.1.0/24 # internet
+          - cidr: 10.42.2.0/24 # game
+        wait: yes
+    register: vpc
+
+  - name: Create ctf-{{env_short}}-security-nat security group
+    local_action:
+        module: ec2_group
+        name: "ctf-{{env_short}}-security-nat"
+        description: NAT access
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: icmp
+            cidr_ip: 0.0.0.0/0
+            from_port: -1
+            to_port: -1
+          - proto: tcp
+            from_port: 1
+            to_port: 65535
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 1
+            to_port: 65535
+            cidr_ip: 10.42.0.0/24
+
+  - name: Provision ctf-{{env_short}}-vm-nat instance
+    local_action:
+        module: ec2
+        instance_type: t2.small
+        image: ami-46073a5b # amazon nat ami
+        key_name: "{{lookup('env', 'KEYPAIR')}}"
+        group: "ctf-{{env_short}}-security-nat"
+        count_tag:
+            Role: ctf-{{env_short}}-role-nat
+            Name: ctf-{{env_short}}-vm-nat
+        instance_tags:
+            Role: ctf-{{env_short}}-role-nat
+            Name: ctf-{{env_short}}-vm-nat
+        vpc_subnet_id: "{{ vpc.subnets[1].id }}"
+        wait: yes
+        exact_count: 1
+        region: "{{ aws_region }}"
+        assign_public_ip: True
+        source_dest_check: False
+    register: natvm
+
+  - name: Add instance to host group
+    local_action:
+        module: add_host
+        ansible_ssh_host: "{{ item.private_ip }}"
+        hostname: "{{ item.private_ip }}"
+        groupname: "{{env_short}}-new-extended-redhat"
+        tag_name: "ctf-{{env_short}}-vm-nat"
+    with_items: natvm.instances
+
+  - name: Waiting for the server to boot
+    local_action:
+        module: wait_for
+        host: "{{ item.private_ip }}"
+        search_regex: "OpenSSH"
+        port: 22
+        delay: 15
+        timeout: 300
+    with_items: natvm.instances
+
+  - name: Create extended ctf-{{env_short}}
+    local_action:
+        module: ec2_vpc
+        cidr_block: 10.42.0.0/17
+        region: "{{aws_region}}"
+        internet_gateway: True
+        subnets:
+          - cidr: 10.42.0.0/24 # private/nat
+          - cidr: 10.42.1.0/24 # internet
+          - cidr: 10.42.2.0/24 # game
+        resource_tags:
+            Name:  ctf-{{env_short}}
+        route_tables:
+          - subnets:
+              - 10.42.1.0/24
+            routes:
+              - dest: 0.0.0.0/0
+                gw: igw
+          - subnets:
+              - 10.42.0.0/24
+              - 10.42.2.0/24
+            routes:
+              - dest: 0.0.0.0/0
+                gw: "{{ natvm.instances[0].id }}"
+        wait: yes
+    when: natvm.instances
+
+  - name: Create ctf-{{env_short}}-security-flagsystem security group
+    local_action:
+        module: ec2_group
+        name: "ctf-{{env_short}}-security-flagsystem"
+        description: Flagsystem access
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: icmp
+            cidr_ip: 10.42.1.0/24
+            from_port: -1
+            to_port: -1
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 10.42.0.0/16
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 10.42.0.0/24
+
+  - name: Create ctf-{{env_short}}-security-memcached security group
+    local_action:
+        module: ec2_group
+        name: "ctf-{{env_short}}-security-memcached"
+        description: Flagsystem access
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: icmp
+            cidr_ip: 10.42.1.0/24
+            from_port: -1
+            to_port: -1
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 10.42.0.0/16
+          - proto: tcp
+            from_port: 11211
+            to_port: 11211
+            cidr_ip: 10.42.0.0/24
+
+  - name: Create ctf-{{env_short}}-security-mysql security group
+    local_action:
+        module: ec2_group
+        name: "ctf-{{env_short}}-security-mysql"
+        description: Flagsystem access
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: icmp
+            cidr_ip: 0.0.0.0/0
+            from_port: -1
+            to_port: -1
+          - proto: tcp
+            from_port: 3306
+            to_port: 3306
+            cidr_ip: 10.42.0.0/24
+
+  - name: Provision ctf-{{env_short}}-vm-flagsystem instances
+    local_action:
+        module: ec2
+        instance_type: t2.small
+        image: ami-4cc5fa51 # trusty/amd64/ebs
+        key_name: "{{lookup('env', 'KEYPAIR')}}"
+        group: "ctf-{{env_short}}-security-flagsystem"
+        count_tag:
+            Role: ctf-{{env_short}}-role-flagsystem
+        instance_tags:
+            Role: ctf-{{env_short}}-role-flagsystem
+        vpc_subnet_id: "{{ vpc.subnets[0].id }}"
+        wait: yes
+        exact_count: 3
+        region: "{{ aws_region }}"
+        assign_public_ip: False
+    register: instances
+
+  - name: Add instance to host group
+    local_action:
+        module: add_host
+        ansible_ssh_host: "{{ item.private_ip }}"
+        hostname: "{{ item.private_ip }}"
+        groupname: "{{env_short}}-new-extended"
+        tag_name: "ctf-{{env_short}}-vm-flagsystem"
+    with_items: instances.instances
+
+  - name: Waiting for the server to boot
+    local_action:
+        module: wait_for
+        host: "{{ item.private_ip }}"
+        search_regex: "OpenSSH"
+        port: 22
+        delay: 15
+        timeout: 300
+    with_items: instances.instances
+
+  - name: Provision ctf-{{env_short}}-vm-memcached instance
+    local_action:
+        module: ec2
+        instance_type: t2.small
+        image: ami-4cc5fa51 # trusty/amd64/ebs
+        key_name: "{{lookup('env', 'KEYPAIR')}}"
+        group: "ctf-{{env_short}}-security-memcached"
+        count_tag:
+            Role: ctf-{{env_short}}-role-memcached
+            Name: ctf-{{env_short}}-vm-memcached
+        instance_tags:
+            Role: ctf-{{env_short}}-role-memcached
+            Name: ctf-{{env_short}}-vm-memcached
+        vpc_subnet_id: "{{ vpc.subnets[0].id }}"
+        wait: yes
+        exact_count: 1
+        region: "{{ aws_region }}"
+        assign_public_ip: False
+    register: instances
+
+  - name: Add instance to host group
+    local_action:
+        module: add_host
+        ansible_ssh_host: "{{ item.private_ip }}"
+        hostname: "{{ item.private_ip }}"
+        groupname: "{{env_short}}-new-extended"
+        tag_name: "ctf-{{env_short}}-vm-memcached"
+    with_items: instances.instances
+
+  - name: Waiting for the servers to boot
+    local_action:
+        module: wait_for
+        host: "{{ item.private_ip }}"
+        search_regex: "OpenSSH"
+        port: 22
+        delay: 15
+        timeout: 300
+    with_items: instances.instances
+

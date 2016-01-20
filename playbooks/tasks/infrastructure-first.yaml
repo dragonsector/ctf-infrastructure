@@ -1,0 +1,77 @@
+- name: Gather EC2 facts
+  action: ec2_facts
+  when: dc == 'ec2'
+
+- name: Add SSH key q3k-01
+  authorized_key: user=root key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDD4VJXAXEHEXZk2dxNwehneuJcEGkfXG/U7z4fO79vDVIENdedtXQUyLyhZJc5RTEfHhQj66FwIqzl7mzBHd9x9PuDp6QAYXrkVNMj48s6JXqZqBvF6H/weRqFMf4a2TZv+hG8D0kpvmLheCwWAVRls7Jofnp/My+yDd57GMdsbG/yFEf6WPMiOnA7hxdSJSVihCsCSw2p8PD4GhBe8CVt7xIuinhutjm9zYBjV78NT8acjDUfJh0B1ODTjs7nuW1CC4jybSe2j/OU3Yczj4AxRxBNWuFxUq+jBo9BfpbKLh+Tt7re+zBkaicM77KM/oV6943JJxgHNBBOsv9scZE7 q3k@amnesia"
+- name: Add SSH key valis-02
+  authorized_key: user=root key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCg13MBbWW++qy7bngcxNE70YGj2o4yVO5M9TqsQUeUk9WLxlckqPhjluhOsjfB8QknxBL+yHf+BzIjcAiOF/DzGGWsS6Z7smp2I6IqyDz50WeTRHO6oxAno7rcQ3LS+y5JTa1UHPj+54TMpgGn8+B6QML2VUWoPkpUhARiTICEYxa4VW5daElkHNR8/sl0IpBGS5CDnbDGdBsVTMG0aVtDdG/PG9NqnOGSkRsEZapXZUZ88lbic9ERWJGPdEv9TVMcwqlao2bPanU/ey/f8NeX5tG1QiKz/z7akTO2SE7icoMFQqcZ0M24rxNL0SnqnMIWL4KbYL3fdQo5JKYV8Q/NOMn2J9k6uxbSIJNqSPafS07ITMO4mbQYkKJmZL5FM2I+sR5VDySZP5PMZwvsTYwdGqzCwkybXBQX22iQULV2KyJOLkzoujFxuiKKHIvfmd7euY+UHBnpuXPxTDlvxBQFNnPti1ars9ufhoSuq5oW/BwgTE0LhmkeU9yQ/nqU4ZW77pgA/fR09EsPibugkBjoxIU5X49UqsdB4+6o5DJFL1jbXimH4wRKOO7tZ/s/ixiYgXveLhbicfwlX1/39oFqthv5yOyImWpDaSFyK+nVYoRswtdVouowT4Db78d1y1HR8mPnBEaCw8YCM0uksylU4g66v39zdO/UuUa0C4fr1w== risk@t60"
+
+- name: Setup initial firewall
+  copy: src=../files/firewall-onlyssh dest=/etc/firewall mode=0700
+
+- name: Execute firewall
+  command: /etc/firewall
+
+- name: Add firewall script to network config (EC2)
+  lineinfile: dest=/etc/network/interfaces.d/eth0.cfg state=present regexp="^\s*pre-up /etc/firewall" line="    pre-up /etc/firewall" insertafter="^iface eth0 inet"
+  when: dc == 'ec2'
+
+- name: Add firewall script to network config (Local)
+  lineinfile: dest=/etc/network/interfaces state=present regexp="^\s*pre-up /etc/firewall" line="    pre-up /etc/firewall" insertafter="^iface p5p1 inet"
+  when: dc == 'local2'
+
+- name: Disable SSH password auth
+  lineinfile: dest=/etc/ssh/sshd_config state=present regexp="^PasswordAuthentication" line="PasswordAuthentication no"
+  notify:
+    - reload ssh
+
+- name: Set hostname
+  hostname: name="{{ tag_name|default(hostvars[inventory_hostname]['ec2_tag_Name'])|default(hostvars[inventory_hostname]['ec2_tag_Role']) }}"
+  when: dc == 'ec2'
+
+- name: Update APT cache and upgrade packages
+  apt: update_cache=yes upgrade=yes
+
+- name: Install basic utilities
+  apt: pkg=vim,acl
+
+- name: Set timezone to CEST (1)
+  copy: content='Europe/Warsaw\n' dest=/etc/timezone owner=root group=root mode=0644
+
+- name: Set timezone to CEST (2)
+  command: dpkg-reconfigure --frontend noninteractive tzdata
+
+- name: Add ntpdate to cron
+  copy: dest=/etc/cron.d/ntpdate content="5 */6 * * * root /usr/sbin/ntpdate-debian\n" owner=root group=root mode=0600
+
+- name: Set sysctl panic_on_oops
+  sysctl: name=kernel.panic_on_oops value=1 state=present sysctl_file=/etc/sysctl.d/90-local.conf
+
+- name: Set sysctl panic
+  sysctl: name=kernel.panic value=30 state=present sysctl_file=/etc/sysctl.d/90-local.conf
+
+- name: Set sysctl tcp_fin_timeout
+  sysctl: name=net.ipv4.tcp_fin_timeout value=30 state=present sysctl_file=/etc/sysctl.d/90-local.conf
+
+- name: Set sysctl net.ipv4.tcp_keepalive_time
+  sysctl: name=net.ipv4.tcp_keepalive_time value=3600 state=present sysctl_file=/etc/sysctl.d/90-local.conf reload=yes
+
+- name: Set sysctl max_xonntrack
+  sysctl: name=net.netfilter.nf_conntrack_max value=131072 state=present sysctl_file=/etc/sysctl.d/90-local.conf reload=yes
+
+- name: Reboot server
+  command: shutdown -r now
+  async: 0
+  poll: 0
+  ignore_errors: true
+
+- name: Waiting for the server to come back (EC2)
+  local_action: wait_for host="{{ ansible_ssh_host }}" search_regex=OpenSSH port=22 delay=15 timeout=300
+  sudo: false
+  when: dc == 'ec2'
+
+- name: Waiting for the server to come back (Local)
+  local_action: wait_for host="{{ inventory_hostname }}" search_regex=OpenSSH port=22 delay=15 timeout=300
+  sudo: false
+  when: dc == 'local'

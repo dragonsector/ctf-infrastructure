@@ -1,0 +1,37 @@
+- include: checkfirewall.yaml
+
+- name: Add service firewall rule (public access)
+  lineinfile: dest=/etc/firewall state=present regexp="^iptables -A INPUT -p tcp --dport 1337" line="iptables -A INPUT -p tcp --dport 1337 -j ACCEPT"
+
+- name: Execute firewall
+  command: /etc/firewall
+
+- name: Install host packages for debootstrp
+  apt: pkg=build-essential,debootstrap,subversion,tmux,lib32stdc++6
+- name: Install nsjail
+  copy: src=../../distfiles/nsjail/nsjail dest=/srv/nsjail owner=root group=root mode=0700
+
+- name: Install task init file
+  copy: src=../../files/go-for-it/init.conf dest=/etc/init/goforit.conf mode=0755
+- name: Debootstrap Ubuntu Trusty
+  command: debootstrap --include=python,python-crypto trusty /srv/chroot-trusty creates=/srv/chroot-trusty
+  notify:
+    - restart goforit
+- name: Enable security updates in chroot
+  lineinfile: dest=/srv/chroot-trusty/etc/apt/sources.list line="deb http://mirror.rackspace.com/ubuntu trusty-security main restricted"
+- name: Upgrade chroot
+  command: chroot /srv/chroot-trusty bash -c "apt-get -y update && apt-get -y upgrade"
+  notify:
+    - restart goforit
+- name: Create task user
+  command: chroot /srv/chroot-trusty useradd -m goforit creates=/srv/chroot-trusty/home/goforit
+- name: Install task files
+  synchronize: src=../../distfiles/go-for-it/ dest=/srv/chroot-trusty/home/goforit delete=yes
+  notify:
+    - restart goforit
+- name: Install 32bit lib32stdc
+  command: chroot /srv/chroot-trusty apt-get -y install lib32stdc++6
+- name: Chown whole chroot to root
+  command: chown -R root:root /srv/chroot-trusty
+- name: Give minimum permissions to task user
+  command: chmod -R 755 /srv/chroot-trusty/home/goforit

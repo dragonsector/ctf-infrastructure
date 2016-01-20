@@ -1,0 +1,5 @@
+- name: Upgrade system packages on all hosts
+  hosts: tag_Role_ctf_prod_*
+  user: root
+  tasks:
+    - include: tasks/pkgupgrade.yaml env_name=production env_short=prod

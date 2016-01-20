@@ -1,0 +1,11 @@
+#!/bin/bash
+
+/sbin/iptables -t nat -F
+/sbin/iptables -t mangle -F
+/sbin/iptables -F
+/sbin/iptables -P OUTPUT ACCEPT
+/sbin/iptables -P INPUT ACCEPT
+/sbin/iptables -P FORWARD ACCEPT
+
+iptables -t nat -A POSTROUTING -o eth0 --source 172.21.37.0/24 -j MASQUERADE
+

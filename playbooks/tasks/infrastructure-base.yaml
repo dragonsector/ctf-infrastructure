@@ -1,0 +1,94 @@
+  - name: Check ctf-{{env_short}} VPC existence
+    local_action:
+        module: ec2_vpc
+        cidr_block: 10.42.0.0/17
+        region: "{{aws_region}}"
+        internet_gateway: True
+        resource_tags:
+            Name:  ctf-{{env_short}}
+        subnets:
+          - cidr: 10.42.0.0/24 # private/nat
+          - cidr: 10.42.1.0/24 # internet
+          - cidr: 10.42.2.0/24 # game
+        wait: yes
+    register: vpc
+
+  - name: Create base ctf-{{env_short}} VPC
+    local_action:
+        module: ec2_vpc
+        cidr_block: 10.42.0.0/17
+        region: "{{aws_region}}"
+        internet_gateway: True
+        subnets:
+          - cidr: 10.42.0.0/24 # private/nat
+          - cidr: 10.42.1.0/24 # internet
+          - cidr: 10.42.2.0/24 # game
+        resource_tags:
+            Name:  ctf-{{env_short}}
+        route_tables:
+          - subnets:
+              - 10.42.0.0/24
+              - 10.42.1.0/24
+              - 10.42.2.0/24
+            routes:
+              - dest: 0.0.0.0/0
+                gw: igw
+        wait: yes
+    when: vpc.changed
+
+  - name: Create ctf-{{env_short}}-security-jumpbox security group
+    local_action:
+        module: ec2_group
+        name: "ctf-{{env_short}}-security-jumpbox"
+        description: Jumpbox access
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: udp
+            from_port: 1337
+            to_port: 1337
+            cidr_ip: 0.0.0.0/0
+
+  - name: Provision ctf-{{env_short}}-vm-jumpbox instance
+    local_action:
+        module: ec2
+        instance_type: t2.small
+        image: ami-4cc5fa51 # trusty/amd64/ebs
+        key_name: "{{lookup('env', 'KEYPAIR')}}"
+        group: "ctf-{{env_short}}-security-jumpbox"
+        count_tag:
+            Name: ctf-{{env_short}}-vm-jumpbox
+            Role: ctf-{{env_short}}-role-jumpbox
+        instance_tags:
+            Name: ctf-{{env_short}}-vm-jumpbox
+            Role: ctf-{{env_short}}-role-jumpbox
+        vpc_subnet_id: "{{ vpc.subnets[1].id }}"
+        wait: yes
+        exact_count: 1
+        region: "{{ aws_region }}"
+        assign_public_ip: True
+    register: instances
+
+  - name: Add jumpbox instance to host group
+    local_action:
+        module: add_host
+        ansible_ssh_host: "{{ item.public_ip }}"
+        hostname: "{{ item.public_ip }}"
+        groupname: "{{env_short}}-new-base"
+        tag_name: "ctf-{{env_short}}-vm-jumpbox"
+    with_items: instances.instances
+
+
+  - name: Waiting for the server to boot
+    local_action:
+        module: wait_for
+        host: "{{ item.public_ip }}"
+        search_regex: "OpenSSH"
+        port: 22
+        delay: 15
+        timeout: 300
+    with_items: instances.instances

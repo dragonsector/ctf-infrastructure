@@ -1,0 +1,22 @@
+- name: check if server is configured
+  stat: path=/srv/flagsystem/flagsystem/htdocs
+  register: htdocs_check
+
+- name: check if server is configured (2)
+  fail: msg="Server not configured yet, you have to run make ansible.software first"
+  when: htdocs_check.stat.exists == False
+
+- name: Upload flagsystem sourcecode
+  synchronize: src=../distfiles/flagsystem-{{env_short}}/ dest=/srv/flagsystem/flagsystem/ delete=yes owner=no group=no
+
+- name: Synchronize challenges
+  synchronize: src=../challenges/ dest=/srv/flagsystem/flagsystem/challenges/ delete=yes
+
+- name: Set flagsystem permissions
+  file: state=directory recurse=true path=/srv/flagsystem/flagsystem owner=root group=flagsystem mode="o-rwx,g-w"
+
+- name: Set templates_c permissions
+  file: state=directory path=/srv/flagsystem/flagsystem/templates_c owner=root group=flagsystem mode=0770
+
+- name: Upload flagsystem config
+  copy: src=../files-secret/flagsystem-config-{{env_short}}.php dest=/srv/flagsystem/flagsystem/config.php owner=root group=flagsystem mode=0640

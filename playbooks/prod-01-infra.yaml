@@ -1,0 +1,92 @@
+- name: Create base production infrastructure on Amazon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - include: tasks/infrastructure-base.yaml env_name=production env_short=prod aws_region=eu-central-1
+
+- name: First-time set up base production instances
+  hosts: prod-new-base
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - include: tasks/infrastructure-first.yaml env_name=production env_short=prod dc=ec2
+  handlers:
+    - name: reload ssh
+      service: name=ssh state=reloaded
+
+- name: Remove sudo from new hosts
+  hosts: prod-new-base
+  remote_user: root
+  tasks:
+    - name: Remove ubuntu user
+      user: name=ubuntu state=absent remove=yes
+    - name: Remove sudo (1)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge ubuntu-minimal
+    - name: Remove sudo (2)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge sudo
+
+- name: Workaround for ansible/ec2 bugs
+  hosts: 127.0.0.1
+  connection: local
+  tasks:
+    - pause: prompt="You probably want to abort right now and run it again to force jumpbox to show in ec2 metadata"
+
+- name: Provision jumpbox
+  hosts: tag_Role_ctf_prod_role_jumpbox
+  remote_user: root
+  tasks:
+    - include: tasks/jumpbox.yaml env_name=production env_short=prod
+  handlers:
+    - name: restart openvpn
+      service: name=openvpn state=restarted
+
+- name: Run OpenVPN locally, if not running already
+  hosts: 127.0.0.1
+  connection: local
+  tasks:
+    - name: Wait for manual connection if requested
+      pause: prompt="Please connect VPN manually"
+      when: lookup('env', 'CTF_VPN_MANUAL')
+    - name: Run OpenVPN
+      shell: "cd ../ && make vpn.connect"
+      when: lookup('env', 'CTF_VPN_FORCEOK') == "" and lookup('env', 'CTF_VPN_MANUAL') == ""
+
+
+- name: Create extended production infrastructure on Amazon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - include: tasks/infrastructure-extended.yaml env_name=production env_short=prod aws_region=eu-central-1
+
+- name: First-time set up extended production instances
+  hosts: prod-new-extended
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - include: tasks/infrastructure-first.yaml env_name=production env_short=prod dc=ec2
+  handlers:
+    - name: reload ssh
+      service: name=ssh state=reloaded
+
+- name: First-time set up extended production instances (redhat images)
+  hosts: prod-new-extended-redhat
+  remote_user: ec2-user
+  become: yes
+  tasks:
+    - include: tasks/infrastructure-first-redhat.yaml env_name=production env_short=prod
+  handlers:
+    - name: reload ssh
+      service: name=ssh state=reloaded
+
+- name: Remove sudo from new hosts
+  hosts: prod-extended
+  remote_user: root
+  tasks:
+    - name: Remove ubuntu user
+      user: name=ubuntu state=absent remove=yes
+    - name: Remove sudo (1)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge ubuntu-minimal
+    - name: Remove sudo (2)
+      shell: DEBIAN_FRONTEND=noninteractive SUDO_FORCE_REMOVE=yes apt-get -y purge sudo

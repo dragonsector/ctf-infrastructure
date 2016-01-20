@@ -1,0 +1,106 @@
+- name: Check ctf-{{env_short}} VPC existence
+  local_action:
+      module: ec2_vpc
+      cidr_block: 10.42.0.0/17
+      region: eu-central-1
+      internet_gateway: True
+      resource_tags:
+          Name:  ctf-{{env_short}}
+      subnets:
+        - cidr: 10.42.0.0/24 # private/nat
+        - cidr: 10.42.1.0/24 # internet
+        - cidr: 10.42.2.0/24 # game
+      wait: yes
+  register: vpc
+
+- name: Create ctf-{{env_short}}-security-lb-flagsystem security group
+  local_action:
+      module: ec2_group
+      name: "ctf-{{env_short}}-security-lb-flagsystem"
+      description: NAT access
+      vpc_id: "{{ vpc.vpc_id }}"
+      region: eu-central-1
+      rules:
+        - proto: icmp
+          cidr_ip: 0.0.0.0/0
+          from_port: -1
+          to_port: -1
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: 10.42.0.0/16
+        - proto: tcp
+          from_port: 443
+          to_port: 443
+          cidr_ip: 10.42.0.0/16
+  register: sg
+- name: Provision flagsystem lb (production)
+  local_action:
+      module: ec2_elb_lb
+      state: present
+      scheme: internal
+      region: eu-central-1
+      connection_draining_timeout: 300
+      cross_az_load_balancing: "yes"
+      subnets: "{{ vpc.subnets[0].id }}"
+      name: ctf-{{env_short}}-lb-flagsystem
+      security_group_ids: "{{sg.group_id}}"
+      listeners:
+        - protocol: http
+          load_balancer_port: 80
+          instance_port: 80
+      health_check:
+          ping_protocol: http
+          ping_port: 80
+          ping_path: "/robots.txt"
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 10
+  register: ec2_elb_prod
+  when: env_short == "prod"
+
+- name: Provision flagsystem lb (test)
+  local_action:
+      module: ec2_elb_lb
+      state: present
+      scheme: internal
+      region: eu-central-1
+      connection_draining_timeout: 300
+      cross_az_load_balancing: "yes"
+      subnets: "{{ vpc.subnets[0].id }}"
+      name: ctf-{{env_short}}-lb-flagsystem
+      security_group_ids: "{{sg.group_id}}"
+      listeners:
+        - protocol: http
+          load_balancer_port: 80
+          instance_port: 80
+      health_check:
+          ping_protocol: tcp
+          ping_port: 80
+          response_timeout: 5
+          interval: 10
+          unhealthy_threshold: 2
+          healthy_threshold: 10
+  register: ec2_elb_test
+  when: env_short == "test"
+
+- name: Add flagsystems instances to lb (prod)
+  local_action:
+      module: ec2_elb
+      instance_id: "{{hostvars[item]['ec2_id']}}"
+      ec2_elbs: "{{ec2_elb_prod.elb['name']}}"
+      state: present
+      region: eu-central-1
+  with_items: groups['tag_Role_ctf_{{env_short}}_role_flagsystem']
+  when: env_short == "prod"
+
+- name: Add flagsystems instances to lb (test)
+  local_action:
+      module: ec2_elb
+      instance_id: "{{hostvars[item]['ec2_id']}}"
+      ec2_elbs: "{{ec2_elb_test.elb['name']}}"
+      state: present
+      region: eu-central-1
+  with_items: groups['tag_Role_ctf_{{env_short}}_role_flagsystem']
+  when: env_short == "test"

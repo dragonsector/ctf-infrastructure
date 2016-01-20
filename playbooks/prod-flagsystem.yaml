@@ -1,0 +1,6 @@
+- name: Set up production flagsystem webapp
+  hosts: prod-flagsystem-backend
+  hosts: tag_Role_ctf_prod_role_flagsystem
+  user: root
+  tasks:
+    - include: tasks/flagsystem-webapp.yaml env_name=production env_short=prod

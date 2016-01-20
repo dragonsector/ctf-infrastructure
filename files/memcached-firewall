@@ -1,0 +1,20 @@
+#!/bin/bash
+
+iptables -t nat -F
+iptables -t raw -F
+iptables -t mangle -F
+iptables -P FORWARD DROP
+iptables -F
+iptables -P OUTPUT ACCEPT
+iptables -P INPUT DROP
+
+iptables -A INPUT -i lo -j ACCEPT
+
+iptables -A INPUT -p icmp -j ACCEPT
+
+iptables -A INPUT -m state --state INVALID -j DROP
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+iptables -A INPUT -p tcp --dport ssh -j ACCEPT
+
+iptables -A INPUT -p tcp --dport 11211 -j ACCEPT

@@ -1,0 +1,64 @@
+  - name: Install OpenVPN
+    apt: pkg=openvpn,easy-rsa state=present
+    notify:
+      - restart openvpn
+
+  - name: Copy OpenVPN config
+    copy: src=../files/openvpn-server.conf dest=/etc/openvpn/admin.conf owner=root mode=0700
+    notify:
+      - restart openvpn
+
+  - name: Create OpenVPN easyrsa setup
+    shell: cp -rv /usr/share/easy-rsa /etc/openvpn/admin-pki && cd /etc/openvpn/admin-pki && . ./vars && ./clean-all
+    args:
+        creates: /etc/openvpn/admin-pki
+
+  - name: Create CA 
+    shell: "cd /etc/openvpn/admin-pki && . ./vars && (sleep 2; for i in $(seq 1 10); do echo; sleep 0.1; done; sleep 2;  ) | ./build-ca"
+    args:
+        creates: /etc/openvpn/admin-pki/keys/ca.crt
+    notify:
+      - restart openvpn
+
+  - name: Create DH
+    shell: cd /etc/openvpn/admin-pki && . ./vars && ./build-dh
+    args:
+        creates: /etc/openvpn/admin-pki/keys/dh2048.pem
+    notify:
+      - restart openvpn
+
+  - name: Create server key
+    shell: "cd /etc/openvpn/admin-pki && . ./vars && (sleep 2; for i in '' '' '' '' '' '' '' '' '' '' y y; do echo $i; sleep 0.1; done; sleep 2;  ) | ./build-key-server server"
+    args:
+        creates: /etc/openvpn/admin-pki/keys/server.key
+    notify:
+      - restart openvpn
+
+  - name: Create client key
+    shell: "cd /etc/openvpn/admin-pki && . ./vars && (sleep 2; for i in '' '' '' '' '' '' '' '' '' '' y y; do echo $i; sleep 0.1; done; sleep 2;  ) | ./build-key {{lookup('env', 'USER')}}"
+    args:
+        creates: /etc/openvpn/admin-pki/keys/{{lookup('env', 'USER')}}.key
+    notify:
+      - restart openvpn
+
+  - name: Fetch OpenVPN certs and key
+    fetch: src=/etc/openvpn/admin-pki/keys/{{ item }} dest=../vpn/{{env_short}}-{{ item|replace(lookup('env', 'USER'), 'client') }} flat=yes
+    with_items:
+        - ca.crt
+        - "{{lookup('env', 'USER')}}.key"
+        - "{{lookup('env', 'USER')}}.crt"
+
+  - name: Set sysctl net.ipv4.ip_forward
+    sysctl: name=net.ipv4.ip_forward value=1 state=present sysctl_file=/etc/sysctl.d/90-local.conf
+
+  - name: Setup VPN firewall
+    copy: src=../files/firewall-jumpbox dest=/etc/firewall mode=0700
+    register:
+        firewall
+
+  - name: Execute firewall
+    command: /etc/firewall
+    when: firewall.changed
+
+  - name: Add firewall script to network configh
+    lineinfile: dest=/etc/network/interfaces.d/eth0.cfg state=present regexp="^\s*pre-up /etc/firewall" line="    pre-up /etc/firewall" insertafter="^iface eth0 inet static"

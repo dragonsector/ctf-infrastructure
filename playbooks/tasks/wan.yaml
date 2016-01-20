@@ -1,0 +1,53 @@
+  - name: Install racoon
+    apt: pkg=racoon,ipsec-tools state=present
+
+  - name: Copy psk.txt
+    copy: src=../files-secret/racoon-psk-{{env_short}}.txt dest=/etc/racoon/psk.txt
+
+  - name: Copy ipsec-tools.conf
+    copy: src=../files-secret/racoon-ipsec-tools-{{env_short}}.conf dest=/etc/ipsec-tools.conf
+
+  - name: Copy racoon.conf
+    copy: src=../files-secret/racoon-racoon-{{env_short}}.conf dest=/etc/racoon/racoon.conf
+
+  - name: Install quagga
+    apt: pkg=quagga state=present
+
+  - name: Enable Quagga BGP daemon
+    lineinfile: dest=/etc/quagga/daemons regexp="^bgpd=" line="bgpd=yes"
+
+  - name: Enable Quagga zebra daemon
+    lineinfile: dest=/etc/quagga/daemons regexp="^zebra=" line="zebra=yes"
+
+  - name: Copy bgpd.conf
+    copy: src=../files-secret/quagga-bgpd-{{env_short}}.conf dest=/etc/quagga/bgpd.conf
+
+  - name: Copy zebra.conf
+    copy: src=../files-secret/quagga-zebra-{{env_short}}.conf dest=/etc/quagga/zebra.conf
+
+  - name: Install vlan package
+    apt: pkg=vlan state=present
+
+  - name: Set up interfaces.d sourcing
+    lineinfile: dest=/etc/network/interfaces line="source /etc/network/interfaces.d/*.conf"
+
+  - name: Copy player vlans interfaces config
+    copy: src=../files/wan-interfaces-players.conf dest=/etc/network/interfaces.d/players.conf
+
+  - name: Instlal DHCPd
+    apt: pkg=isc-dhcp-server state=present
+
+  - name: Copy DHCPd config
+    copy: src=../files/wan-dhcpd.conf dest=/etc/dhcp/dhcpd.conf
+
+  - name: Setup VPN firewall
+    copy: src=../files/firewall-wan dest=/etc/firewall mode=0700
+    register:
+        firewall
+
+  - name: Execute firewall
+    command: /etc/firewall
+    when: firewall.changed
+
+  - name: Add firewall script to network config
+    lineinfile: dest=/etc/network/interfaces state=present regexp="^\s*pre-up /etc/firewall" line="        pre-up /etc/firewall" insertafter="^iface p5p1 inet"

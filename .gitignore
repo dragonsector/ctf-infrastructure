@@ -1,0 +1,26 @@
+# build crud
+.venv
+distfiles/*.tar.xz
+distfiles/tmp
+
+# python crud
+*.pyc
+
+# vim crud
+*.swp
+
+# SEEEEKRUT
+files-secret/*
+creds
+inventory/localhost
+challenges/
+meta/
+playbooks/test-*
+client-resources/
+distfiles/
+vpn/*crt
+vpn/*key
+vpn/test*
+vpn/prod*
+nohup.out
+tmp/

@@ -1,0 +1,15 @@
+- name: Install memcached
+  apt: pkg=memcached
+- name: Copy memcached config
+  template: src=../files/memcached.conf dest=/etc/memcached.conf
+  notify:
+    - restart memcached
+
+- name: Update APT cache and upgrade packages
+  apt: update_cache=yes upgrade=yes
+
+- name: Setup firewall
+  copy: src=../files/memcached-firewall dest=/etc/firewall mode=0700
+
+- name: Execute firewall
+  command: /etc/firewall

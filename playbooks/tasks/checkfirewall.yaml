@@ -1,0 +1,7 @@
+- name: check if firewall script exists
+  stat: path=/etc/firewall
+  register: firewall_check
+
+- name: check if firewall script exists (2)
+  fail: msg="/etc/firewall not found, it should have been created in infrastructure-first"
+  when: firewall_check.stat.exists == False

@@ -1,0 +1,5 @@
+  - name: Set up production wan software
+    hosts: ctf-prod-wan
+    user: root
+    tasks:
+      - include: tasks/wan.yaml env_name=production env_short=prod

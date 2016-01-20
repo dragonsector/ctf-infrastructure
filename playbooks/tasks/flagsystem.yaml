@@ -1,0 +1,76 @@
+- name: Update APT cache and upgrade packages
+  apt: update_cache=yes upgrade=yes
+
+- name: Install nginx & php-fpm
+  apt: pkg=nginx,php5-fpm,php5-mysql,php5-memcached,vim,acl,mysql-client-5.6
+
+- name: Create flagsystem user
+  user: name=flagsystem home=/srv/flagsystem system=yes
+
+- name: Create directory structure
+  file: state=directory path=/srv/flagsystem owner=root group=flagsystem mode=0750
+- name: Create directory structure (2)
+  file: state=directory path=/srv/flagsystem/flagsystem owner=root group=flagsystem mode=0750
+- name: Create directory structure (3)
+  file: state=directory path=/srv/flagsystem/flagsystem/htdocs owner=root group=flagsystem mode=0750
+
+- name: Create audit log
+  file: state=touch path=/srv/flagsystem/audit.log owner=root group=flagsystem mode=0660
+- name: Set +a on audit.log
+  command: chattr +a /srv/flagsystem/audit.log 
+
+- name: Set www-data ACLs (1)
+  acl: name=/srv/flagsystem entity=www-data etype=group permissions="x" state=present
+- name: Set www-data ACLs (2)
+  acl: name=/srv/flagsystem/flagsystem entity=www-data etype=group permissions="x" state=present
+- name: Set www-data ACLs (3)
+  acl: name=/srv/flagsystem/flagsystem/htdocs entity=www-data etype=group permissions="x" state=present
+- name: Set www-data default ACL for htdocs
+  acl: name=/srv/flagsystem/flagsystem/htdocs entity=www-data etype=group permissions="rx" state=present default=yes
+
+- name: Install PHP pool config
+  copy: src=../files/flagsystem-php-pool.conf dest=/etc/php5/fpm/pool.d/flagsystem.conf
+  notify:
+    - restart php
+
+- name: Remove default PHP pool
+  file: dest=/etc/php5/fpm/pool.d/www.conf state=absent
+  notify:
+    - restart php
+- name: Upload php.ini
+  template: src=../files/flagsystem-php.ini dest=/etc/php5/fpm/php.ini
+  notify:
+    - restart php
+
+- name: Copy nginx site config (htpasswd)
+  template: src=../files/flagsystem-nginx-site-htpasswd.conf dest=/etc/nginx/sites-enabled/flagsystem
+  notify:
+    - reload nginx
+  when: "{{enable_htpasswd}} == true"
+
+- name: Copy nginx site config (NON htpasswd)
+  template: src=../files/flagsystem-nginx-site.conf dest=/etc/nginx/sites-enabled/flagsystem
+  notify:
+    - reload nginx
+  when: "{{enable_htpasswd}} == false"
+
+- name: Set nginx global config (1)
+  lineinfile: dest=/etc/nginx/nginx.conf state=present regexp="^worker_rlimit_nofile " line="worker_rlimit_nofile 10000;" insertbefore="^http {"
+
+- name: Copy nginx htpasswd
+  copy: src=../files/flagsystem-htpasswd dest=/etc/nginx/htpasswd
+  notify:
+    - reload nginx
+- name: Delete default nginx site
+  file: dest=/etc/nginx/sites-enabled/default state=absent
+  notify:
+    - reload nginx
+
+- include: flagsystem-webapp.yaml
+
+- name: Setup firewall
+  copy: src=../files/flagsystem-firewall dest=/etc/firewall mode=0700
+
+- name: Execute firewall
+  command: /etc/firewall
+

@@ -1,0 +1,80 @@
+- name: Update APT cache and upgrade packages
+  apt: update_cache=yes upgrade=yes
+
+- include: checkfirewall.yaml
+
+- name: Install nginx & php-fpm
+  apt: pkg=nginx,php5-fpm,php5-mysql
+
+- name: Create task user
+  user: name=soaped-sql home=/srv/soaped-sql system=yes
+
+- name: Remove default PHP pool
+  file: dest=/etc/php5/fpm/pool.d/www.conf state=absent
+  notify:
+    - restart php
+
+- name: Install PHP pool config
+  copy: src=../files/soaped-sql/php-pool.conf dest=/etc/php5/fpm/pool.d/soaped-sql.conf
+  notify:
+    - restart php
+
+- name: Upload php.ini
+  copy: src=../files/flagsystem-php.ini dest=/etc/php5/fpm/php.ini
+  notify:
+    - restart php
+
+- name: Set session handler to files
+  lineinfile: dest=/etc/php5/fpm/php.ini state=present regexp="^session.save_handler" line="session.save_handler = files" insertafter="^http://php.net/session.save-handler"
+
+- name: Set session save_path
+  lineinfile: dest=/etc/php5/fpm/php.ini state=present regexp="^session.save_path" line="session.save_path = \"/var/lib/php5\"" insertafter="^;session.save_path"
+
+- name: Set session gc_maxlifetime
+  lineinfile: dest=/etc/php5/fpm/php.ini state=present regexp="^session.gc_maxlifetime" line="session.gc_maxlifetime = 600" insertafter="^; http://php.net/session.gc-maxlifetime"
+
+- name: Copy nginx site config
+  template: src=../files/soaped-sql/nginx-site.conf dest=/etc/nginx/sites-enabled/soaped-sql
+  notify:
+    - reload nginx
+
+- name: Delete default nginx site
+  file: dest=/etc/nginx/sites-enabled/default state=absent
+  notify:
+    - reload nginx
+
+- name: Set nginx global config (1)
+  lineinfile: dest=/etc/nginx/nginx.conf state=present regexp="^worker_rlimit_nofile " line="worker_rlimit_nofile 10000;" insertbefore="^http {"
+
+- name: Create directory structure (1)
+  file: state=directory path=/srv/soaped-sql owner=root group=soaped-sql mode=0750
+
+- name: Create directory structure (2)
+  file: state=directory path=/srv/soaped-sql/htdocs owner=root group=soaped-sql mode=0750
+
+- name: Set www-data ACLs (1)
+  acl: name=/srv/soaped-sql entity=www-data etype=group permissions="x" state=present
+
+- name: Set www-data ACLs (2)
+  acl: name=/srv/soaped-sql/htdocs entity=www-data etype=group permissions="x" state=present
+
+- name: Install task files
+  synchronize: src=../../distfiles/soaped-sql/ dest=/srv/soaped-sql/htdocs/ delete=yes
+
+- name: Upload db config
+  copy: src=../files-secret/soaped-sql-db_connect-{{env_short}}.php dest=/srv/soaped-sql/htdocs/db_connect.php owner=root group=soaped-sql mode=0640
+
+- name: Set task file permissions
+  file: state=directory recurse=yes path=/srv/soaped-sql/htdocs owner=root group=soaped-sql mode=0740
+
+- name: Set task dir permissions
+  file: state=directory path=/srv/soaped-sql/htdocs owner=root group=soaped-sql mode=0750
+
+- set_fact: iptables_base="iptables -A INPUT -p tcp --dport http"
+
+- name: Add service firewall rule
+  lineinfile: dest=/etc/firewall state=present regexp="^{{iptables_base}}" line="{{iptables_base}} -j ACCEPT"
+
+- name: Execute firewall
+  command: /etc/firewall
+
